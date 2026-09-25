@@ -3,8 +3,8 @@
 Voice journal and semantic memory search, organized as a monorepo.
 
 The repository currently contains the directory scaffold and local database
-configuration. The FastAPI API and Next.js web app are planned; neither app is
-implemented yet.
+configuration. The FastAPI API stores and lists text notes in PostgreSQL; the
+Next.js web app is not implemented yet.
 
 ## Repository layout
 
@@ -66,7 +66,7 @@ docker compose down
 ```
 
 Data persists in a Docker volume. Initialization SQL runs only for a new volume;
-later schema changes will use Alembic migrations.
+the schema itself comes from Alembic migrations (see the [API README](apps/api/README.md)).
 
 ## Implementation order
 
