@@ -1,0 +1,83 @@
+# voicelog
+
+Voice journal and semantic memory search, organized as a monorepo.
+
+The repository currently contains the directory scaffold and local database
+configuration. The FastAPI API and Next.js web app are planned; neither app is
+implemented yet.
+
+## Repository layout
+
+```text
+voicelog/
+├── apps/
+│   ├── api/                # FastAPI service
+│   └── web/                # Next.js app
+├── infra/
+│   └── postgres/           # local database init scripts
+├── docs/
+│   └── specification.md
+├── docker-compose.yml
+└── .env.example            # local database only
+```
+
+- [API](apps/api/README.md): FastAPI, async SQLAlchemy, Alembic, and AI services.
+- [Web](apps/web/README.md): Next.js recording, journal, and search interface.
+- [Specification](docs/specification.md): original product requirements, preserved
+  as supplied. Its backend paths will live under `apps/api/` in this monorepo.
+
+Each app has its own `.env.example`; copy it as described in the app README.
+
+Each app will own its dependencies, lockfile, tests, and deployment configuration.
+Root files coordinate local development. No monorepo build tool is needed yet.
+
+## Local database
+
+Prerequisite: a running Docker engine with Docker Compose.
+
+From the repository root, create your local configuration once:
+
+```sh
+cp .env.example .env
+```
+
+Validate the configuration and start PostgreSQL:
+
+```sh
+docker compose config --quiet
+docker compose up -d --wait db
+```
+
+PostgreSQL is available on `127.0.0.1:5432` by default. Change `POSTGRES_PORT` in
+`.env` if that port is already in use. These credentials are for local development.
+
+The [pgvector image](https://github.com/pgvector/pgvector#docker) contains the
+extension; the initialization SQL enables it when the data volume is first created.
+Check it with:
+
+```sh
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\dx vector"'
+```
+
+Stop the database while retaining its data:
+
+```sh
+docker compose down
+```
+
+Data persists in a Docker volume. Initialization SQL runs only for a new volume;
+later schema changes will use Alembic migrations.
+
+## Implementation order
+
+1. Bootstrap FastAPI on Python 3.12 with configuration and health endpoints.
+2. Add async SQLAlchemy, Alembic, and the notes schema; implement text-note creation,
+   listing, filtering, and detail endpoints.
+3. Add LangChain metadata extraction and 1,536-dimensional embeddings.
+4. Add audio transcription, semantic retrieval, and answers with source notes.
+5. Bootstrap Next.js and implement recording, note history, and text/voice search.
+6. Add CI and prepare authenticated deployments.
+
+Completed audio uploads are the first recording workflow. Streaming, background
+processing, and local Whisper support are later milestones. Audio retention and
+playback storage must be decided before implementing playback.
