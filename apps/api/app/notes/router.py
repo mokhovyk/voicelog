@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.ai.services import AIDep
 from app.core.database import SessionDep
 from app.notes import service
 from app.notes.schemas import NoteCreate, NoteList, NoteListParams, NoteRead
@@ -11,8 +12,8 @@ router = APIRouter(prefix="/notes", tags=["notes"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_note(data: NoteCreate, session: SessionDep) -> NoteRead:
-    note = await service.create_note(session, data)
+async def create_note(data: NoteCreate, session: SessionDep, ai: AIDep) -> NoteRead:
+    note = await service.create_note(session, data, ai)
     return NoteRead.model_validate(note)
 
 

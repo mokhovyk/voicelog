@@ -1,8 +1,8 @@
 # API
 
 The voicelog FastAPI service. It currently provides a `/health` liveness endpoint
-and text notes stored in PostgreSQL. AI extraction, embeddings, audio, and search
-follow the root README's implementation order.
+and text notes stored in PostgreSQL, enriched by OpenAI through LangChain. Audio
+and search follow the root README's implementation order.
 
 ## Endpoints
 
@@ -13,7 +13,22 @@ follow the root README's implementation order.
 | `GET` | `/api/v1/notes` | Newest first; `category`, `limit` (1-100, default 20), `offset`. |
 | `GET` | `/api/v1/notes/{id}` | One note, or 404. |
 
-`summary` and `action_items` are empty until AI extraction is added.
+## AI enrichment
+
+When a note is created, two OpenAI calls run concurrently on the transcript:
+
+- **Extraction** (`app/ai/extraction.py`, `OPENAI_CHAT_MODEL`): summary, category
+  (`Work`, `Personal`, `Ideas`, `Other`), up to 5 tags, and action items.
+- **Embedding** (`app/ai/embeddings.py`, `OPENAI_EMBEDDING_MODEL`): a 1536-dimension
+  vector stored in `notes.embedding` for semantic search. It is not returned by the API.
+
+A `category` or `tags` sent by the client take precedence over extracted values.
+If `OPENAI_API_KEY` is empty or a call fails, the failure is logged and the note is
+still saved with that part empty. Notes with `embedding IS NULL` can be reprocessed
+once background processing exists.
+
+Tests never call OpenAI: they use fakes, or run the real clients against a mocked
+OpenAI HTTP API.
 
 ## Development
 
@@ -64,18 +79,18 @@ apps/api/
 │   ├── main.py      # app factory; mounts routers under /api/v1
 │   ├── core/        # settings, async database session, logging
 │   ├── notes/       # router, models, schemas, service for note CRUD and upload
-│   ├── search/      # router, schemas, service for hybrid retrieval and answers
-│   └── ai/          # transcription, metadata extraction, embeddings clients
+│   ├── ai/          # metadata extraction and embeddings (transcription later)
+│   └── search/      # router, schemas, service for hybrid retrieval and answers
 ├── migrations/      # Alembic migrations
 └── tests/           # API, service, and PostgreSQL integration tests
 ```
 
-`app/health.py` holds the liveness route. `core/` and `notes/` exist; `search/`
-and `ai/` are added as those features land.
+`app/health.py` holds the liveness route. `core/`, `notes/`, and `ai/` exist;
+`search/` is added with retrieval.
 
 The first migration enables `vector` itself, so it works on managed databases
 without the local init script in `infra/postgres/`. The `embedding` column and its
-HNSW cosine index already exist; they are filled once embeddings are added.
+HNSW cosine index are filled when notes are created with an OpenAI key.
 
 See the [root README](../../README.md) to start the local database and the
 [specification](../../docs/specification.md) for the API requirements. The

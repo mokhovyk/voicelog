@@ -6,17 +6,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app import health
+from app.ai.services import AIServices, create_ai_services
 from app.core.config import Settings, get_settings
 from app.notes.router import router as notes_router
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, ai: AIServices | None = None) -> FastAPI:
     settings = settings or get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_async_engine(settings.database_url, pool_pre_ping=True)
         app.state.sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+        app.state.ai = ai or create_ai_services(settings)
         yield
         await engine.dispose()
 

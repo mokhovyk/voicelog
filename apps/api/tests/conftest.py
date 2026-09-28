@@ -10,6 +10,8 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sa_text
 from sqlalchemy.engine import make_url
 
+from app.ai.extraction import NoteMetadata
+from app.ai.services import AIServices
 from app.core.config import Settings
 from app.main import create_app
 
@@ -54,9 +56,37 @@ def database_url() -> str:
     return TEST_DATABASE_URL
 
 
+class FakeExtractor:
+    def __init__(self, result: NoteMetadata | Exception) -> None:
+        self.result = result
+        self.calls: list[str] = []
+
+    async def extract(self, transcript: str) -> NoteMetadata:
+        self.calls.append(transcript)
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+class FakeEmbedder:
+    def __init__(self, result: list[float] | Exception) -> None:
+        self.result = result
+
+    async def embed(self, text: str) -> list[float]:
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
 @pytest.fixture
-async def client(database_url: str) -> AsyncIterator[AsyncClient]:
-    app = create_app(Settings(environment="test", database_url=database_url))
+def ai() -> AIServices:
+    """No AI by default, so tests never call OpenAI. Override in a test module."""
+    return AIServices()
+
+
+@pytest.fixture
+async def client(database_url: str, ai: AIServices) -> AsyncIterator[AsyncClient]:
+    app = create_app(Settings(environment="test", database_url=database_url), ai=ai)
     async with app.router.lifespan_context(app):
         async with app.state.sessionmaker() as session:
             await session.execute(sa_text("TRUNCATE notes"))
