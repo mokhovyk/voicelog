@@ -1,8 +1,9 @@
 # API
 
 The voicelog FastAPI service. It currently provides a `/health` liveness endpoint
-and text notes stored in PostgreSQL, enriched by OpenAI through LangChain. Audio
-and search follow the root README's implementation order.
+text notes stored in PostgreSQL, enriched by OpenAI through LangChain, and semantic
+search over them. Audio and answer synthesis follow the root README's
+implementation order.
 
 ## Endpoints
 
@@ -13,6 +14,7 @@ and search follow the root README's implementation order.
 | `POST` | `/api/v1/notes` | Create a text note: `raw_transcript`, optional `category` and `tags`. Returns it as `pending`. |
 | `GET` | `/api/v1/notes` | Newest first; `category`, `tag`, `created_after`, `created_before` (with timezone), `limit` (1-100, default 20), `offset`. |
 | `GET` | `/api/v1/notes/{id}` | One note, or 404. |
+| `POST` | `/api/v1/search` | Semantic search: `query` (1-2000 chars), the same filters as listing, `limit` (1-50, default 10). Returns `items` of `{score, note}`, most similar first. |
 
 Categories are `Work`, `Personal`, `Ideas`, `Other` (any casing is accepted; other
 values are rejected). Tags are stored lowercase.
@@ -37,6 +39,18 @@ the client take precedence over extracted values.
 
 Background tasks run in the API process, so enrichment in progress is lost if the
 process stops; the note remains `pending`. Move to a job queue when that matters.
+
+## Search
+
+`POST /api/v1/search` embeds the query with `OPENAI_EMBEDDING_MODEL` and ranks notes
+by cosine similarity (`score` is 1 - cosine distance). Only notes embedded with that
+same model are searched, so `pending`, `failed`, and not-yet-re-embedded notes are
+missing from results until they are reprocessed. Without `OPENAI_API_KEY` the
+endpoint returns 503; if embedding the query fails, 502.
+
+Filters run inside the HNSW scan via pgvector's iterative scans
+(`hnsw.iterative_scan`, pgvector 0.8+), so a filtered search still returns up to
+`limit` matches.
 
 Tests never call OpenAI: they use fakes, or run the real clients against a mocked
 OpenAI HTTP API.
@@ -106,8 +120,7 @@ apps/api/
 └── tests/           # API, service, and PostgreSQL integration tests
 ```
 
-`app/health.py` holds the health routes. `core/`, `notes/`, and `ai/` exist;
-`search/` is added with retrieval. Feature packages may import `ai/` and `core/`;
+`app/health.py` holds the health routes. Feature packages may import `ai/` and `core/`;
 `ai/` imports neither `notes/` nor `search/`, so it stays reusable by both. Audio
 upload belongs in `notes/` (transcribe, then the existing create flow); the
 `/api/v1/query/*` endpoints belong in `search/`.

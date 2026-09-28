@@ -9,6 +9,7 @@ from app import health
 from app.ai.services import AIServices, create_ai_services
 from app.core.config import Settings, get_settings
 from app.notes.router import router as notes_router
+from app.search.router import router as search_router
 
 
 def create_app(settings: Settings | None = None, ai: AIServices | None = None) -> FastAPI:
@@ -39,6 +40,7 @@ def create_app(settings: Settings | None = None, ai: AIServices | None = None) -
     )
     app.include_router(health.router)
     app.include_router(notes_router, prefix="/api/v1")
+    app.include_router(search_router, prefix="/api/v1")
     return app
 
 

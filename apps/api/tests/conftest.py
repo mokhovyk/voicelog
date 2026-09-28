@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sa_text
 from sqlalchemy.engine import make_url
 
+from app.ai.embeddings import EMBEDDING_DIMENSIONS
 from app.ai.extraction import NoteMetadata
 from app.ai.services import AIServices
 from app.core.config import Settings
@@ -78,6 +79,23 @@ class FakeEmbedder:
         if isinstance(self.result, Exception):
             raise self.result
         return self.result
+
+
+class KeywordEmbedder:
+    """Embeds text as keyword counts, one dimension per keyword, so similarity is
+    predictable: texts sharing more keywords are closer."""
+
+    model = "keyword-embedding"
+
+    def __init__(self, keywords: list[str]) -> None:
+        self.keywords = keywords
+
+    async def embed(self, text: str) -> list[float]:
+        words = text.lower().split()
+        vector = [float(words.count(keyword)) for keyword in self.keywords]
+        vector += [0.0] * (EMBEDDING_DIMENSIONS - len(vector))
+        vector[-1] = 0.1  # never the zero vector, whose cosine distance is undefined
+        return vector
 
 
 @pytest.fixture

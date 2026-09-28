@@ -2,13 +2,13 @@ import asyncio
 import logging
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.extraction import NoteMetadata
 from app.ai.services import AIServices
 from app.notes.models import Note
-from app.notes.schemas import NoteCreate, NoteListParams
+from app.notes.schemas import NoteCreate, NoteFilters, NoteListParams
 
 logger = logging.getLogger(__name__)
 
@@ -83,17 +83,20 @@ def _clean_tags(tags: list[str]) -> list[str]:
     return list(dict.fromkeys(tag for tag in cleaned if tag))[:MAX_TAGS]
 
 
-async def list_notes(session: AsyncSession, params: NoteListParams) -> tuple[list[Note], int]:
-    query = select(Note)
-    if params.category is not None:
-        query = query.where(Note.category == params.category)
-    if params.tag is not None:
-        query = query.where(Note.tags.contains([params.tag]))  # @>, uses ix_notes_tags
-    if params.created_after is not None:
-        query = query.where(Note.created_at >= params.created_after)
-    if params.created_before is not None:
-        query = query.where(Note.created_at < params.created_before)
+def apply_filters[T: tuple](query: Select[T], filters: NoteFilters) -> Select[T]:
+    if filters.category is not None:
+        query = query.where(Note.category == filters.category)
+    if filters.tag is not None:
+        query = query.where(Note.tags.contains([filters.tag]))  # @>, uses ix_notes_tags
+    if filters.created_after is not None:
+        query = query.where(Note.created_at >= filters.created_after)
+    if filters.created_before is not None:
+        query = query.where(Note.created_at < filters.created_before)
+    return query
 
+
+async def list_notes(session: AsyncSession, params: NoteListParams) -> tuple[list[Note], int]:
+    query = apply_filters(select(Note), params)
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     notes = await session.scalars(
         query.order_by(Note.created_at.desc(), Note.id.desc())

@@ -54,10 +54,15 @@ class NoteList(BaseModel):
     offset: int
 
 
-class NoteListParams(BaseModel):
+class NoteFilters(BaseModel):
+    """Filters shared by listing and search."""
+
     category: Category | None = None
     tag: Tag | None = None
     created_after: AwareDatetime | None = None
     created_before: AwareDatetime | None = None
+
+
+class NoteListParams(NoteFilters):
     limit: int = Field(20, ge=1, le=100)
     offset: int = Field(0, ge=0)
