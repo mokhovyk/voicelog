@@ -4,10 +4,14 @@ import httpx
 from langchain_openai import OpenAIEmbeddings
 from pydantic import SecretStr
 
-from app.notes.models import EMBEDDING_DIMENSIONS
+# Must match the notes.embedding column. OpenAI text-embedding-3 models return this size
+# when asked via `dimensions`.
+EMBEDDING_DIMENSIONS = 1536
 
 
 class Embedder(Protocol):
+    model: str
+
     async def embed(self, text: str) -> list[float]: ...
 
 
@@ -15,6 +19,7 @@ class OpenAIEmbedder:
     def __init__(
         self, api_key: SecretStr, model: str, http_client: httpx.AsyncClient | None = None
     ) -> None:
+        self.model = model
         self._embeddings = OpenAIEmbeddings(
             model=model,
             api_key=api_key,

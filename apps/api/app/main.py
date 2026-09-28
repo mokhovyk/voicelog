@@ -20,6 +20,8 @@ def create_app(settings: Settings | None = None, ai: AIServices | None = None) -
         app.state.sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
         app.state.ai = ai or create_ai_services(settings)
         yield
+        if ai is None:  # injected services belong to the caller
+            await app.state.ai.aclose()
         await engine.dispose()
 
     app = FastAPI(

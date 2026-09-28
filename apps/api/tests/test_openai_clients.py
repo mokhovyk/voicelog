@@ -8,11 +8,10 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from app.ai.embeddings import OpenAIEmbedder
+from app.ai.embeddings import EMBEDDING_DIMENSIONS, OpenAIEmbedder
 from app.ai.extraction import NoteMetadata, OpenAIMetadataExtractor
 from app.ai.services import create_ai_services
 from app.core.config import Settings
-from app.notes.models import EMBEDDING_DIMENSIONS
 
 pytestmark = pytest.mark.anyio
 
@@ -89,8 +88,12 @@ def test_no_ai_without_api_key(key: str | None) -> None:
     assert (ai.extractor, ai.embedder) == (None, None)
 
 
-def test_ai_enabled_with_api_key() -> None:
+async def test_ai_enabled_with_api_key() -> None:
     ai = create_ai_services(Settings(openai_api_key="sk-test"))
 
     assert isinstance(ai.extractor, OpenAIMetadataExtractor)
     assert isinstance(ai.embedder, OpenAIEmbedder)
+    assert ai.embedder.model == "text-embedding-3-small"
+    assert ai.http_client is not None
+    await ai.aclose()
+    assert ai.http_client.is_closed

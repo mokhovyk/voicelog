@@ -1,13 +1,18 @@
-from typing import Literal, Protocol
+from typing import Literal, Protocol, get_args
 
 import httpx
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, SecretStr
 
-from app.notes.schemas import ActionItem
-
+# The note categories. Notes reuse this so client-sent and extracted values agree.
 Category = Literal["Work", "Personal", "Ideas", "Other"]
+CATEGORIES: tuple[str, ...] = get_args(Category)
+
+
+class ExtractedActionItem(BaseModel):
+    text: str
+    done: bool = False
 
 
 class NoteMetadata(BaseModel):
@@ -16,7 +21,7 @@ class NoteMetadata(BaseModel):
     summary: str = Field(description="One or two sentences summarizing the note.")
     category: Category = Field(description="The single best-fitting category.")
     tags: list[str] = Field(description="Up to 5 short lowercase keyword tags.")
-    action_items: list[ActionItem] = Field(
+    action_items: list[ExtractedActionItem] = Field(
         description="Concrete tasks the speaker needs to do. Empty if there are none."
     )
 

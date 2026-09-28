@@ -69,6 +69,8 @@ class FakeExtractor:
 
 
 class FakeEmbedder:
+    model = "fake-embedding"
+
     def __init__(self, result: list[float] | Exception) -> None:
         self.result = result
 

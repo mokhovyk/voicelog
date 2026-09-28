@@ -12,6 +12,12 @@ async def create(client: AsyncClient, **fields: object) -> dict:
     return response.json()
 
 
+async def list_ids(client: AsyncClient, **params: object) -> list[str]:
+    response = await client.get("/api/v1/notes", params=params)
+    assert response.status_code == 200, response.text
+    return [note["id"] for note in response.json()["items"]]
+
+
 async def test_create_note_returns_stored_note(client: AsyncClient) -> None:
     note = await create(
         client, raw_transcript="  Sync with Sarah.  ", category="Work", tags=["release"]
@@ -19,6 +25,7 @@ async def test_create_note_returns_stored_note(client: AsyncClient) -> None:
 
     assert uuid.UUID(note["id"])
     assert note["raw_transcript"] == "Sync with Sarah."
+    assert note["status"] == "pending"
     assert note["category"] == "Work"
     assert note["tags"] == ["release"]
     assert note["summary"] is None
@@ -27,12 +34,18 @@ async def test_create_note_returns_stored_note(client: AsyncClient) -> None:
     assert "embedding" not in note
 
 
+async def test_create_note_normalizes_category_and_tags(client: AsyncClient) -> None:
+    note = await create(client, category=" work ", tags=["Release", "LOGIN-bug"])
+
+    assert (note["category"], note["tags"]) == ("Work", ["release", "login-bug"])
+
+
 @pytest.mark.parametrize(
     "payload",
     [
         {},
         {"raw_transcript": "   "},
-        {"raw_transcript": "ok", "category": "x" * 51},
+        {"raw_transcript": "ok", "category": "Health"},
         {"raw_transcript": "ok", "tags": ["x" * 51]},
     ],
 )
@@ -79,8 +92,34 @@ async def test_list_notes_filters_by_category(client: AsyncClient) -> None:
     assert body["total"] == 1
 
 
-@pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 101}, {"offset": -1}])
-async def test_list_notes_rejects_invalid_pagination(client: AsyncClient, params: dict) -> None:
+async def test_list_notes_filters_by_tag(client: AsyncClient) -> None:
+    tagged = await create(client, tags=["release", "bug"])
+    await create(client, tags=["gym"])
+
+    body = (await client.get("/api/v1/notes", params={"tag": "Release"})).json()
+
+    assert [n["id"] for n in body["items"]] == [tagged["id"]]
+
+
+async def test_list_notes_filters_by_creation_time(client: AsyncClient) -> None:
+    older = await create(client)
+    newer = await create(client)
+
+    assert await list_ids(client, created_after=newer["created_at"]) == [newer["id"]]
+    assert await list_ids(client, created_before=newer["created_at"]) == [older["id"]]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"limit": 0},
+        {"limit": 101},
+        {"offset": -1},
+        {"category": "Health"},
+        {"created_after": "2026-01-01T00:00:00"},  # naive datetimes are ambiguous
+    ],
+)
+async def test_list_notes_rejects_invalid_params(client: AsyncClient, params: dict) -> None:
     response = await client.get("/api/v1/notes", params=params)
 
     assert response.status_code == 422

@@ -26,10 +26,20 @@ voicelog/
 - [Specification](docs/specification.md): original product requirements, preserved
   as supplied. Its backend paths will live under `apps/api/` in this monorepo.
 
-Each app has its own `.env.example`; copy it as described in the app README.
+Each app has its own `.env.example`; copy it as described in the app README. The
+root `.env` is the source of truth for local database credentials: it creates the
+database container, and `DATABASE_URL` in `apps/api/.env` must match it. The
+defaults in `app/core/config.py` and `tests/conftest.py` match the example values.
 
 Each app will own its dependencies, lockfile, tests, and deployment configuration.
-Root files coordinate local development. No monorepo build tool is needed yet.
+Root files coordinate local development. No monorepo build tool is needed yet;
+the root `Makefile` wraps the common commands (`make help`):
+
+```sh
+make db-up migrate   # start PostgreSQL and apply migrations
+make dev             # run the API with reload
+make check           # lint, tests, and the models-vs-migrations check
+```
 
 ## Local database
 
