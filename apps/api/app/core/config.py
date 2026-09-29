@@ -17,10 +17,12 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     database_url: str = LOCAL_DATABASE_URL
 
-    # Without a key, notes are saved without AI metadata or embeddings.
+    # Without a key, notes are saved without AI metadata or embeddings, and audio
+    # upload and search return 503.
     openai_api_key: SecretStr | None = None
     openai_chat_model: str = "gpt-5.4-mini"
     openai_embedding_model: str = "text-embedding-3-small"
+    openai_transcription_model: str = "gpt-4o-mini-transcribe"
 
     @model_validator(mode="after")
     def _require_production_settings(self) -> Self:

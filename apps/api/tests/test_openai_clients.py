@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from app.ai.embeddings import EMBEDDING_DIMENSIONS, OpenAIEmbedder
 from app.ai.extraction import NoteMetadata, OpenAIMetadataExtractor
 from app.ai.services import create_ai_services
+from app.ai.transcription import OpenAITranscriber
 from app.core.config import Settings
 
 pytestmark = pytest.mark.anyio
@@ -81,11 +82,26 @@ async def test_embedder_requests_configured_dimensions() -> None:
     assert (body["model"], body["dimensions"]) == ("text-embedding-3-small", EMBEDDING_DIMENSIONS)
 
 
+async def test_transcriber_uploads_audio_with_format_extension() -> None:
+    client, requests = mock_openai({"text": "Fix the login bug."})
+
+    result = await OpenAITranscriber(KEY, "transcribe-test", client).transcribe(b"RIFF", "webm")
+
+    assert result == "Fix the login bug."
+    request = requests[0]
+    assert request.url.path == "/v1/audio/transcriptions"
+    assert request.headers["content-type"].startswith("multipart/form-data")
+    body = request.content
+    assert b'name="model"\r\n\r\ntranscribe-test' in body
+    assert b'filename="audio.webm"' in body
+    assert b"RIFF" in body
+
+
 @pytest.mark.parametrize("key", [None, ""])
 def test_no_ai_without_api_key(key: str | None) -> None:
     ai = create_ai_services(Settings(openai_api_key=key))
 
-    assert (ai.extractor, ai.embedder) == (None, None)
+    assert (ai.extractor, ai.embedder, ai.transcriber) == (None, None, None)
 
 
 async def test_ai_enabled_with_api_key() -> None:
@@ -94,6 +110,8 @@ async def test_ai_enabled_with_api_key() -> None:
     assert isinstance(ai.extractor, OpenAIMetadataExtractor)
     assert isinstance(ai.embedder, OpenAIEmbedder)
     assert ai.embedder.model == "text-embedding-3-small"
+    assert isinstance(ai.transcriber, OpenAITranscriber)
+    assert ai.transcriber.model == "gpt-4o-mini-transcribe"
     assert ai.http_client is not None
     await ai.aclose()
     assert ai.http_client.is_closed

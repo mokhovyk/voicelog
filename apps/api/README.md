@@ -1,8 +1,8 @@
 # API
 
-The voicelog FastAPI service. It currently provides a `/health` liveness endpoint
-text notes stored in PostgreSQL, enriched by OpenAI through LangChain, and semantic
-search over them. Audio and answer synthesis follow the root README's
+The voicelog FastAPI service. It currently provides health endpoints, text and
+audio notes stored in PostgreSQL, enriched by OpenAI through LangChain, and semantic
+search over them. Answer synthesis and voice queries follow the root README's
 implementation order.
 
 ## Endpoints
@@ -12,6 +12,7 @@ implementation order.
 | `GET` | `/health` | Liveness check; does not touch the database. |
 | `GET` | `/health/ready` | Readiness check: 200 if the database answers, else 503. |
 | `POST` | `/api/v1/notes` | Create a text note: `raw_transcript`, optional `category` and `tags`. Returns it as `pending`. |
+| `POST` | `/api/v1/notes/upload` | Create a note from audio: `multipart/form-data` with `file`, optional `category` and `tags` (repeat the field for several). Returns it as `pending`. |
 | `GET` | `/api/v1/notes` | Newest first; `category`, `tag`, `created_after`, `created_before` (with timezone), `limit` (1-100, default 20), `offset`. |
 | `GET` | `/api/v1/notes/{id}` | One note, or 404. |
 | `POST` | `/api/v1/search` | Semantic search: `query` (1-2000 chars), the same filters as listing, `limit` (1-50, default 10). Returns `items` of `{score, note}`, most similar first. |
@@ -39,6 +40,28 @@ the client take precedence over extracted values.
 
 Background tasks run in the API process, so enrichment in progress is lost if the
 process stops; the note remains `pending`. Move to a job queue when that matters.
+
+## Audio notes
+
+`POST /api/v1/notes/upload` transcribes the audio with `OPENAI_TRANSCRIPTION_MODEL`
+before responding, then saves the transcript exactly like a text note, including the
+background enrichment. The audio is not stored. Formats are those OpenAI accepts:
+FLAC, M4A/MP4, MP3/MPEG, OGG, WAV, and WebM, which covers browser `MediaRecorder`
+output. The MIME type decides the format, and the file extension is the fallback when
+it is missing or `application/octet-stream`, as with `curl -F file=@note.m4a`.
+
+| Status | When |
+| :--- | :--- |
+| 415 | The format is not supported. |
+| 413 | The file is over 25 MiB, OpenAI's limit. |
+| 422 | The file is missing or empty, a form field is invalid, or no speech was recognized. |
+| 502 | Transcription failed. |
+| 503 | `OPENAI_API_KEY` is not set. |
+
+No note is saved in these cases. The server receives the whole upload before checking
+its size, so also cap request bodies at the proxy or platform in production. Because
+the response waits for the transcript, a very long recording can outlast a platform's
+request timeout; background transcription is a later milestone.
 
 ## Search
 
@@ -114,7 +137,7 @@ apps/api/
 │   ├── main.py      # app factory; mounts routers under /api/v1
 │   ├── core/        # settings, async database session, logging
 │   ├── notes/       # router, models, schemas, service for note CRUD and upload
-│   ├── ai/          # OpenAI adapters: extraction, embeddings; later transcription, answers
+│   ├── ai/          # OpenAI adapters: extraction, embeddings, transcription; later answers
 │   └── search/      # router, schemas, service for hybrid retrieval and answers
 ├── migrations/      # Alembic migrations
 └── tests/           # API, service, and PostgreSQL integration tests

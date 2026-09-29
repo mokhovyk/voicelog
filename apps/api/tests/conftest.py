@@ -81,6 +81,18 @@ class FakeEmbedder:
         return self.result
 
 
+class FakeTranscriber:
+    def __init__(self, result: str | Exception) -> None:
+        self.result = result
+        self.calls: list[tuple[bytes, str]] = []
+
+    async def transcribe(self, audio: bytes, audio_format: str) -> str:
+        self.calls.append((audio, audio_format))
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
 class KeywordEmbedder:
     """Embeds text as keyword counts, one dimension per keyword, so similarity is
     predictable: texts sharing more keywords are closer."""
