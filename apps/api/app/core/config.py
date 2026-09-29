@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     database_url: str = LOCAL_DATABASE_URL
 
     # Without a key, notes are saved without AI metadata or embeddings, and audio
-    # upload and search return 503.
+    # upload, search, and questions return 503. The chat model also answers questions.
     openai_api_key: SecretStr | None = None
     openai_chat_model: str = "gpt-5.4-mini"
     openai_embedding_model: str = "text-embedding-3-small"

@@ -3,11 +3,13 @@
 import base64
 import json
 import struct
+from datetime import UTC, datetime
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
+from app.ai.answers import MAX_NOTE_CHARS, Answer, OpenAIAnswerer, SourceNote
 from app.ai.embeddings import EMBEDDING_DIMENSIONS, OpenAIEmbedder
 from app.ai.extraction import NoteMetadata, OpenAIMetadataExtractor
 from app.ai.services import create_ai_services
@@ -62,6 +64,43 @@ async def test_extractor_sends_schema_and_parses_response() -> None:
     assert body["messages"][-1]["content"] == "Fix the login bug"
 
 
+def chat_completion(content: dict) -> dict:
+    return {
+        "id": "chatcmpl-1",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "gpt-test",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": json.dumps(content)},
+            }
+        ],
+    }
+
+
+async def test_answerer_sends_numbered_dated_notes_and_parses_citations() -> None:
+    answer = {"answer": "Fix the login bug by Friday.", "note_numbers": [2]}
+    client, requests = mock_openai(chat_completion(answer))
+    notes = [
+        SourceNote(created_at=datetime(2026, 9, 21, 9, tzinfo=UTC), text="Gym at seven."),
+        SourceNote(created_at=datetime(2026, 9, 28, 9, tzinfo=UTC), text="x" * 9000),
+    ]
+
+    result = await OpenAIAnswerer(KEY, "gpt-test", client).answer("What bug?", notes)
+
+    assert result == Answer.model_validate(answer)
+    body = json.loads(requests[0].content)
+    assert requests[0].url.path == "/v1/chat/completions"
+    assert body["response_format"]["type"] == "json_schema"
+    prompt = body["messages"][-1]["content"]
+    assert "[1] Recorded Monday, 2026-09-21\nGym at seven." in prompt
+    assert f"[2] Recorded Monday, 2026-09-28\n{'x' * MAX_NOTE_CHARS} [truncated]" in prompt
+    assert prompt.endswith("Question: What bug?")
+    assert f"today is {datetime.now(UTC):%A, %Y-%m-%d}" in body["messages"][0]["content"]
+
+
 async def test_embedder_requests_configured_dimensions() -> None:
     vector = [0.5] * EMBEDDING_DIMENSIONS
     encoded = base64.b64encode(struct.pack(f"{len(vector)}f", *vector)).decode()
@@ -101,7 +140,7 @@ async def test_transcriber_uploads_audio_with_format_extension() -> None:
 def test_no_ai_without_api_key(key: str | None) -> None:
     ai = create_ai_services(Settings(openai_api_key=key))
 
-    assert (ai.extractor, ai.embedder, ai.transcriber) == (None, None, None)
+    assert (ai.extractor, ai.embedder, ai.transcriber, ai.answerer) == (None,) * 4
 
 
 async def test_ai_enabled_with_api_key() -> None:
@@ -112,6 +151,7 @@ async def test_ai_enabled_with_api_key() -> None:
     assert ai.embedder.model == "text-embedding-3-small"
     assert isinstance(ai.transcriber, OpenAITranscriber)
     assert ai.transcriber.model == "gpt-4o-mini-transcribe"
+    assert isinstance(ai.answerer, OpenAIAnswerer)
     assert ai.http_client is not None
     await ai.aclose()
     assert ai.http_client.is_closed

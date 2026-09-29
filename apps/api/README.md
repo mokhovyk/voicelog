@@ -1,9 +1,9 @@
 # API
 
 The voicelog FastAPI service. It currently provides health endpoints, text and
-audio notes stored in PostgreSQL, enriched by OpenAI through LangChain, and semantic
-search over them. Answer synthesis and voice queries follow the root README's
-implementation order.
+audio notes stored in PostgreSQL, enriched by OpenAI through LangChain, semantic
+search over them, and answers to questions with the notes they cite. Voice queries
+follow the root README's implementation order.
 
 ## Endpoints
 
@@ -16,6 +16,7 @@ implementation order.
 | `GET` | `/api/v1/notes` | Newest first; `category`, `tag`, `created_after`, `created_before` (with timezone), `limit` (1-100, default 20), `offset`. |
 | `GET` | `/api/v1/notes/{id}` | One note, or 404. |
 | `POST` | `/api/v1/search` | Semantic search: `query` (1-2000 chars), the same filters as listing, `limit` (1-50, default 10). Returns `items` of `{score, note}`, most similar first. |
+| `POST` | `/api/v1/query/text` | Answer a question from notes: `query`, the same filters, `limit` (1-20, default 5) notes to draw from. Returns `answer` and cited `sources` of `{score, note}`. |
 
 Categories are `Work`, `Personal`, `Ideas`, `Other` (any casing is accepted; other
 values are rejected). Tags are stored lowercase.
@@ -74,6 +75,21 @@ endpoint returns 503; if embedding the query fails, 502.
 Filters run inside the HNSW scan via pgvector's iterative scans
 (`hnsw.iterative_scan`, pgvector 0.8+), so a filtered search still returns up to
 `limit` matches.
+
+## Questions
+
+`POST /api/v1/query/text` runs the same search, then sends the `limit` most similar
+notes to `OPENAI_CHAT_MODEL`, numbered and dated, with today's date so that relative
+dates like "by Friday" resolve. It returns the model's answer and, in `sources`, only
+the notes the model says it used, most similar first. Transcripts over 8,000
+characters are truncated in the prompt.
+
+If no notes match, `answer` is `null`, `sources` is empty, and the model is not
+called. If the notes do not answer the question, the model says so, usually with no
+sources. Dates are in UTC. Filters are not inferred from the question yet: "last
+week" is only understood if the matching notes are among those retrieved, so pass
+`created_after` for strict date ranges. Without `OPENAI_API_KEY` the endpoint returns
+503; if embedding the query or generating the answer fails, 502.
 
 Tests never call OpenAI: they use fakes, or run the real clients against a mocked
 OpenAI HTTP API.
@@ -137,7 +153,7 @@ apps/api/
 │   ├── main.py      # app factory; mounts routers under /api/v1
 │   ├── core/        # settings, async database session, logging
 │   ├── notes/       # router, models, schemas, service for note CRUD and upload
-│   ├── ai/          # OpenAI adapters: extraction, embeddings, transcription; later answers
+│   ├── ai/          # OpenAI adapters: extraction, embeddings, transcription, answers
 │   └── search/      # router, schemas, service for hybrid retrieval and answers
 ├── migrations/      # Alembic migrations
 └── tests/           # API, service, and PostgreSQL integration tests

@@ -14,6 +14,11 @@ class SearchRequest(NoteFilters):
     limit: int = Field(10, ge=1, le=50)
 
 
+class QueryRequest(SearchRequest):
+    # How many of the most similar notes the answer is drawn from.
+    limit: int = Field(5, ge=1, le=20)
+
+
 class SearchHit(BaseModel):
     # Cosine similarity, 1 - cosine distance; higher is closer.
     score: float
@@ -22,3 +27,10 @@ class SearchHit(BaseModel):
 
 class SearchResults(BaseModel):
     items: list[SearchHit]
+
+
+class QueryAnswer(BaseModel):
+    # None when no notes matched, so there was nothing to answer from.
+    answer: str | None
+    # The notes the answer cites, most similar first.
+    sources: list[SearchHit]

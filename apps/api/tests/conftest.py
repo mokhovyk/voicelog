@@ -1,6 +1,6 @@
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 import asyncpg
 import pytest
@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sa_text
 from sqlalchemy.engine import make_url
 
+from app.ai.answers import Answer, SourceNote
 from app.ai.embeddings import EMBEDDING_DIMENSIONS
 from app.ai.extraction import NoteMetadata
 from app.ai.services import AIServices
@@ -88,6 +89,18 @@ class FakeTranscriber:
 
     async def transcribe(self, audio: bytes, audio_format: str) -> str:
         self.calls.append((audio, audio_format))
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+class FakeAnswerer:
+    def __init__(self, result: Answer | Exception) -> None:
+        self.result = result
+        self.calls: list[tuple[str, list[SourceNote]]] = []
+
+    async def answer(self, question: str, notes: Sequence[SourceNote]) -> Answer:
+        self.calls.append((question, list(notes)))
         if isinstance(self.result, Exception):
             raise self.result
         return self.result

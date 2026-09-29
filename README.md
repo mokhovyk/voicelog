@@ -4,8 +4,8 @@ Voice journal and semantic memory search, organized as a monorepo.
 
 The repository currently contains the directory scaffold and local database
 configuration. The FastAPI API stores text and transcribed audio notes in PostgreSQL,
-enriches them with AI metadata and embeddings, and searches them semantically; the
-Next.js web app is not implemented yet.
+enriches them with AI metadata and embeddings, searches them semantically, and
+answers questions citing the notes used; the Next.js web app is not implemented yet.
 
 ## Repository layout
 
