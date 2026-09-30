@@ -2,8 +2,7 @@
 
 The voicelog FastAPI service. It currently provides health endpoints, text and
 audio notes stored in PostgreSQL, enriched by OpenAI through LangChain, semantic
-search over them, and answers to questions with the notes they cite. Voice queries
-follow the root README's implementation order.
+search over them, and answers to typed or spoken questions with the notes they cite.
 
 ## Endpoints
 
@@ -17,6 +16,7 @@ follow the root README's implementation order.
 | `GET` | `/api/v1/notes/{id}` | One note, or 404. |
 | `POST` | `/api/v1/search` | Semantic search: `query` (1-2000 chars), the same filters as listing, `limit` (1-50, default 10). Returns `items` of `{score, note}`, most similar first. |
 | `POST` | `/api/v1/query/text` | Answer a question from notes: `query`, the same filters, `limit` (1-20, default 5) notes to draw from. Returns `answer` and cited `sources` of `{score, note}`. |
+| `POST` | `/api/v1/query/voice` | Answer a spoken question: `multipart/form-data` with `file` and the same optional fields as `/query/text` except `query`. Returns the transcribed `query` too. |
 
 Categories are `Work`, `Personal`, `Ideas`, `Other` (any casing is accepted; other
 values are rejected). Tags are stored lowercase.
@@ -91,6 +91,14 @@ week" is only understood if the matching notes are among those retrieved, so pas
 `created_after` for strict date ranges. Without `OPENAI_API_KEY` the endpoint returns
 503; if embedding the query or generating the answer fails, 502.
 
+## Voice questions
+
+`POST /api/v1/query/voice` transcribes the audio as audio notes do, with the same
+formats, limit, and errors (415, 413, 422, 502, 503), then answers the transcript
+exactly like `/query/text`. The response adds the transcript as `query`, so clients
+can show what was heard. A transcript over 2,000 characters, the text query limit, is
+rejected with 422. The audio is not stored.
+
 Tests never call OpenAI: they use fakes, or run the real clients against a mocked
 OpenAI HTTP API.
 
@@ -151,6 +159,7 @@ Code is grouped by feature rather than by layer:
 apps/api/
 ├── app/
 │   ├── main.py      # app factory; mounts routers under /api/v1
+│   ├── audio.py     # audio upload checks and transcription, shared by notes and search
 │   ├── core/        # settings, async database session, logging
 │   ├── notes/       # router, models, schemas, service for note CRUD and upload
 │   ├── ai/          # OpenAI adapters: extraction, embeddings, transcription, answers
@@ -159,7 +168,8 @@ apps/api/
 └── tests/           # API, service, and PostgreSQL integration tests
 ```
 
-`app/health.py` holds the health routes. Feature packages may import `ai/` and `core/`;
+`app/health.py` holds the health routes, and `app/audio.py` turns an uploaded file
+into a transcript or an HTTP error for both audio notes and voice questions. Feature packages may import `ai/` and `core/`;
 `ai/` imports neither `notes/` nor `search/`, so it stays reusable by both. Audio
 upload belongs in `notes/` (transcribe, then the existing create flow); the
 `/api/v1/query/*` endpoints belong in `search/`.

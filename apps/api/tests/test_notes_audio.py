@@ -1,10 +1,10 @@
 import pytest
 from httpx import AsyncClient
 
+from app import audio
 from app.ai.embeddings import EMBEDDING_DIMENSIONS
 from app.ai.extraction import NoteMetadata
 from app.ai.services import AIServices
-from app.notes import router
 from tests.conftest import FakeEmbedder, FakeExtractor, FakeTranscriber
 
 pytestmark = pytest.mark.anyio
@@ -94,7 +94,7 @@ class TestUpload:
     async def test_rejects_audio_over_limit(
         self, client: AsyncClient, ai: AIServices, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(router, "MAX_AUDIO_BYTES", 10)
+        monkeypatch.setattr(audio, "MAX_AUDIO_BYTES", 10)
 
         assert (await upload(client, audio=b"x" * 10)).status_code == 201
         assert (await upload(client, audio=b"x" * 11)).status_code == 413

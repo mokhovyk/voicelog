@@ -34,3 +34,8 @@ class QueryAnswer(BaseModel):
     answer: str | None
     # The notes the answer cites, most similar first.
     sources: list[SearchHit]
+
+
+class VoiceQueryAnswer(QueryAnswer):
+    # The transcribed question.
+    query: str
