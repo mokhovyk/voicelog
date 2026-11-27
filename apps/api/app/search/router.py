@@ -8,14 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.services import AIDep, AIServices
 from app.audio import transcribe_upload
 from app.core.database import SessionDep
-from app.notes.models import Note
-from app.notes.schemas import Category, NoteRead, Tag
+from app.notes.schemas import Category, Tag
 from app.search import service
 from app.search.schemas import (
     MAX_QUERY_LENGTH,
     QueryAnswer,
     QueryRequest,
-    SearchHit,
     SearchRequest,
     SearchResults,
     VoiceQueryAnswer,
@@ -36,7 +34,7 @@ async def search(request: SearchRequest, session: SessionDep, ai: AIDep) -> Sear
     except service.QueryEmbeddingError:
         logger.exception("Query embedding failed")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Query embedding failed") from None
-    return SearchResults(items=_hits(hits))
+    return SearchResults(items=service.to_hits(hits))
 
 
 @router.post("/query/text")
@@ -94,8 +92,4 @@ async def _answer(request: QueryRequest, session: AsyncSession, ai: AIServices) 
     except service.AnswerGenerationError:
         logger.exception("Answer generation failed")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Answer generation failed") from None
-    return QueryAnswer(answer=answer, sources=_hits(sources))
-
-
-def _hits(hits: list[tuple[Note, float]]) -> list[SearchHit]:
-    return [SearchHit(score=score, note=NoteRead.model_validate(note)) for note, score in hits]
+    return QueryAnswer(answer=answer, sources=service.to_hits(sources))

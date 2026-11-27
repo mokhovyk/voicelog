@@ -2,8 +2,9 @@ from typing import Literal, Protocol, get_args
 
 import httpx
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, SecretStr
+
+from app.ai.llm import chat_model
 
 # The note categories. Notes reuse this so client-sent and extracted values agree.
 Category = Literal["Work", "Personal", "Ideas", "Other"]
@@ -47,13 +48,7 @@ class OpenAIMetadataExtractor:
     def __init__(
         self, api_key: SecretStr, model: str, http_client: httpx.AsyncClient | None = None
     ) -> None:
-        llm = ChatOpenAI(
-            model=model,
-            api_key=api_key,
-            timeout=30,
-            max_retries=2,
-            http_async_client=http_client,
-        )
+        llm = chat_model(api_key, model, http_client, timeout=30)
         self._chain = PROMPT | llm.with_structured_output(NoteMetadata)
 
     async def extract(self, transcript: str) -> NoteMetadata:

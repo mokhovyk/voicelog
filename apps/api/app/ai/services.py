@@ -5,6 +5,7 @@ from typing import Annotated
 import httpx
 from fastapi import Depends, Request
 
+from app.ai.agent import Interpreter, OpenAIInterpreter
 from app.ai.answers import Answerer, OpenAIAnswerer
 from app.ai.embeddings import Embedder, OpenAIEmbedder
 from app.ai.extraction import MetadataExtractor, OpenAIMetadataExtractor
@@ -20,6 +21,7 @@ class AIServices:
     embedder: Embedder | None = None
     transcriber: Transcriber | None = None
     answerer: Answerer | None = None
+    interpreter: Interpreter | None = None
     # Shared by the OpenAI clients; closed on app shutdown.
     http_client: httpx.AsyncClient | None = None
 
@@ -38,7 +40,7 @@ def create_ai_services(settings: Settings) -> AIServices:
     if key is None or not key.get_secret_value():
         logger.warning(
             "OPENAI_API_KEY is not set; notes will be saved without AI metadata, "
-            "and audio, search, and questions are unavailable."
+            "and audio, search, questions, and the agent are unavailable."
         )
         return AIServices()
     http_client = httpx.AsyncClient()
@@ -47,6 +49,7 @@ def create_ai_services(settings: Settings) -> AIServices:
         embedder=OpenAIEmbedder(key, settings.openai_embedding_model, http_client),
         transcriber=OpenAITranscriber(key, settings.openai_transcription_model, http_client),
         answerer=OpenAIAnswerer(key, settings.openai_chat_model, http_client),
+        interpreter=OpenAIInterpreter(key, settings.openai_agent_model, http_client),
         http_client=http_client,
     )
 

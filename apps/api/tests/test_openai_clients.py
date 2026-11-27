@@ -3,15 +3,17 @@
 import base64
 import json
 import struct
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
+from app.ai.agent import AskNotes, InterpretationError, OpenAIInterpreter, Reply
 from app.ai.answers import MAX_NOTE_CHARS, Answer, OpenAIAnswerer, SourceNote
 from app.ai.embeddings import EMBEDDING_DIMENSIONS, OpenAIEmbedder
 from app.ai.extraction import NoteMetadata, OpenAIMetadataExtractor
+from app.ai.llm import parse_model_spec
 from app.ai.services import create_ai_services
 from app.ai.transcription import OpenAITranscriber
 from app.core.config import Settings
@@ -140,7 +142,7 @@ async def test_transcriber_uploads_audio_with_format_extension() -> None:
 def test_no_ai_without_api_key(key: str | None) -> None:
     ai = create_ai_services(Settings(openai_api_key=key))
 
-    assert (ai.extractor, ai.embedder, ai.transcriber, ai.answerer) == (None,) * 4
+    assert (ai.extractor, ai.embedder, ai.transcriber, ai.answerer, ai.interpreter) == (None,) * 5
 
 
 async def test_ai_enabled_with_api_key() -> None:
@@ -152,6 +154,103 @@ async def test_ai_enabled_with_api_key() -> None:
     assert isinstance(ai.transcriber, OpenAITranscriber)
     assert ai.transcriber.model == "gpt-4o-mini-transcribe"
     assert isinstance(ai.answerer, OpenAIAnswerer)
+    assert isinstance(ai.interpreter, OpenAIInterpreter)
+    assert ai.interpreter.model == "gpt-5.4"
     assert ai.http_client is not None
     await ai.aclose()
     assert ai.http_client.is_closed
+
+
+def tool_call_completion(name: str, arguments: dict, content: str | None = None) -> dict:
+    message: dict = {"role": "assistant", "content": content}
+    if name:
+        message["tool_calls"] = [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": name, "arguments": json.dumps(arguments)},
+            }
+        ]
+    return {
+        "id": "chatcmpl-1",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "gpt-test",
+        "choices": [{"index": 0, "finish_reason": "tool_calls", "message": message}],
+    }
+
+
+NOW = datetime(2026, 11, 27, 10, tzinfo=UTC)
+
+
+async def test_interpreter_sends_strict_tools_and_parses_the_call() -> None:
+    arguments = {
+        "question": "what did Sarah say",
+        "start_date": "2026-11-16",
+        "end_date": "2026-11-22",
+        "category": None,
+    }
+    client, requests = mock_openai(tool_call_completion("ask_notes", arguments))
+
+    interpreter = OpenAIInterpreter(KEY, "gpt-test@low", client)
+    result = await interpreter.interpret("what did Sarah say last week", NOW)
+
+    assert result == AskNotes(
+        question="what did Sarah say", start_date=date(2026, 11, 16), end_date=date(2026, 11, 22)
+    )
+    body = json.loads(requests[0].content)
+    assert (body["model"], body["reasoning_effort"]) == ("gpt-test", "low")
+    assert body["tool_choice"] == "required"
+    assert body["parallel_tool_calls"] is False
+    tools = {tool["function"]["name"]: tool["function"] for tool in body["tools"]}
+    assert set(tools) == {
+        "create_note",
+        "ask_notes",
+        "list_action_items",
+        "complete_action_item",
+        "reply",
+    }
+    assert all(tool["strict"] for tool in tools.values())
+    assert set(tools["ask_notes"]["parameters"]["required"]) == set(arguments)
+    assert "Today is Friday, 2026-11-27." in body["messages"][0]["content"]
+    assert body["messages"][1] == {"role": "user", "content": "what did Sarah say last week"}
+
+
+async def test_interpreter_reads_plain_text_as_a_reply() -> None:
+    client, _ = mock_openai(tool_call_completion("", {}, content="Hello!"))
+
+    result = await OpenAIInterpreter(KEY, "gpt-test", client).interpret("hi", NOW)
+
+    assert result == Reply(message="Hello!")
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments"),
+    [("delete_everything", {}), ("ask_notes", {"start_date": "not a date"})],
+)
+async def test_interpreter_rejects_unknown_tools_and_bad_arguments(
+    name: str, arguments: dict
+) -> None:
+    client, _ = mock_openai(tool_call_completion(name, arguments))
+
+    with pytest.raises(InterpretationError):
+        await OpenAIInterpreter(KEY, "gpt-test", client).interpret("hi", NOW)
+
+
+def test_model_spec() -> None:
+    assert parse_model_spec("gpt-5.4") == ("gpt-5.4", None)
+    assert parse_model_spec("gpt-5.4-mini@low") == ("gpt-5.4-mini", "low")
+    for spec in ["", "@low", "gpt-5.4@fast"]:
+        with pytest.raises(ValueError):
+            parse_model_spec(spec)
+
+
+async def test_answerer_uses_its_clock() -> None:
+    client, requests = mock_openai(chat_completion({"answer": "x", "note_numbers": []}))
+    answerer = OpenAIAnswerer(KEY, "gpt-test", client, clock=lambda: NOW)
+
+    await answerer.answer("q", [SourceNote(created_at=NOW, text="t")])
+
+    assert (
+        "today is Friday, 2026-11-27" in json.loads(requests[0].content)["messages"][0]["content"]
+    )
