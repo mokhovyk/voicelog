@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app import health
+from app.agent.router import router as agent_router
 from app.ai.services import AIServices, create_ai_services
 from app.core.config import Settings, get_settings
 from app.notes.router import router as notes_router
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None, ai: AIServices | None = None) -
     app.include_router(health.router)
     app.include_router(notes_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
+    app.include_router(agent_router, prefix="/api/v1")
     return app
 
 

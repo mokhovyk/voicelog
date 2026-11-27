@@ -1,12 +1,13 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, SecretStr
+
+from app.ai.llm import chat_model
 
 # Longer transcripts are cut, bounding the prompt size however many notes are sent.
 MAX_NOTE_CHARS = 8000
@@ -62,23 +63,27 @@ def format_notes(notes: Sequence[SourceNote]) -> str:
     return "\n\n".join(blocks)
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 class OpenAIAnswerer:
     def __init__(
-        self, api_key: SecretStr, model: str, http_client: httpx.AsyncClient | None = None
+        self,
+        api_key: SecretStr,
+        model: str,
+        http_client: httpx.AsyncClient | None = None,
+        clock: Callable[[], datetime] = _utc_now,
     ) -> None:
-        llm = ChatOpenAI(
-            model=model,
-            api_key=api_key,
-            timeout=60,
-            max_retries=2,
-            http_async_client=http_client,
-        )
+        llm = chat_model(api_key, model, http_client, timeout=60)
         self._chain = PROMPT | llm.with_structured_output(Answer)
+        # Evals pin "today" so relative dates resolve the same on every run.
+        self._clock = clock
 
     async def answer(self, question: str, notes: Sequence[SourceNote]) -> Answer:
         result = await self._chain.ainvoke(
             {
-                "today": _format_date(datetime.now(UTC)),
+                "today": _format_date(self._clock()),
                 "notes": format_notes(notes),
                 "question": question,
             }

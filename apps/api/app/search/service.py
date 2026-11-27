@@ -4,8 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.answers import Answerer, SourceNote
 from app.ai.embeddings import Embedder
 from app.notes.models import Note
+from app.notes.schemas import NoteRead
 from app.notes.service import apply_filters
-from app.search.schemas import QueryRequest, SearchRequest
+from app.search.schemas import QueryRequest, SearchHit, SearchRequest
 
 
 class QueryEmbeddingError(Exception):
@@ -61,3 +62,7 @@ async def answer_query(
     # Numbers are 1-based; ignore any the model invented.
     cited = sorted({n for n in result.note_numbers if 1 <= n <= len(hits)})
     return result.answer, [hits[n - 1] for n in cited]
+
+
+def to_hits(hits: list[tuple[Note, float]]) -> list[SearchHit]:
+    return [SearchHit(score=score, note=NoteRead.model_validate(note)) for note, score in hits]

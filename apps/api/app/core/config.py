@@ -18,9 +18,14 @@ class Settings(BaseSettings):
     database_url: str = LOCAL_DATABASE_URL
 
     # Without a key, notes are saved without AI metadata or embeddings, and audio
-    # upload, search, and questions return 503. The chat model also answers questions.
+    # upload, search, questions, and the agent return 503. The chat model also answers
+    # questions. Chat and agent models accept MODEL@EFFORT, e.g. "gpt-5.4-mini@low", to
+    # set the reasoning effort; see evals/ for choosing them.
     openai_api_key: SecretStr | None = None
     openai_chat_model: str = "gpt-5.4-mini"
+    # Picks the action for each agent request. Starts on the strong model; evals/
+    # measures whether a cheaper one does the same.
+    openai_agent_model: str = "gpt-5.4"
     openai_embedding_model: str = "text-embedding-3-small"
     openai_transcription_model: str = "gpt-4o-mini-transcribe"
 

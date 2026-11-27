@@ -1,7 +1,7 @@
 # Common local-development commands. Run from the repository root.
 API := uv --directory apps/api run
 
-.PHONY: help db-up db-down migrate dev test lint format check docker-api
+.PHONY: help db-up db-down migrate dev test lint format check evals evals-dry docker-api
 
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -31,6 +31,12 @@ format: ## Fix lint issues and format
 
 check: lint test ## Everything CI should run; also verifies models match migrations
 	$(API) alembic check
+
+evals: ## Compare models on the eval datasets (needs OPENAI_API_KEY; ARGS="--suite agent ...")
+	$(API) python -m evals $(ARGS)
+
+evals-dry: ## Validate the eval datasets without calling OpenAI
+	$(API) python -m evals --dry-run
 
 docker-api: ## Build the API image
 	docker build -t voicelog-api apps/api

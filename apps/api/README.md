@@ -17,6 +17,8 @@ search over them, and answers to typed or spoken questions with the notes they c
 | `POST` | `/api/v1/search` | Semantic search: `query` (1-2000 chars), the same filters as listing, `limit` (1-50, default 10). Returns `items` of `{score, note}`, most similar first. |
 | `POST` | `/api/v1/query/text` | Answer a question from notes: `query`, the same filters, `limit` (1-20, default 5) notes to draw from. Returns `answer` and cited `sources` of `{score, note}`. |
 | `POST` | `/api/v1/query/voice` | Answer a spoken question: `multipart/form-data` with `file` and the same optional fields as `/query/text` except `query`. Returns the transcribed `query` too. |
+| `POST` | `/api/v1/agent/text` | Voice agent, typed: `{"utterance": "..."}`. Picks and carries out one action; see [Agent](#agent). |
+| `POST` | `/api/v1/agent/voice` | Voice agent: `multipart/form-data` with `file`. Transcribes, then acts like `/agent/text`. |
 
 Categories are `Work`, `Personal`, `Ideas`, `Other` (any casing is accepted; other
 values are rejected). Tags are stored lowercase.
@@ -99,6 +101,34 @@ exactly like `/query/text`. The response adds the transcript as `query`, so clie
 can show what was heard. A transcript over 2,000 characters, the text query limit, is
 rejected with 422. The audio is not stored.
 
+## Agent
+
+`POST /api/v1/agent/text` and `/agent/voice` take a free-form request and let
+`OPENAI_AGENT_MODEL` choose one action by tool calling (`app/ai/agent.py`); the API
+then carries it out (`app/agent/service.py`):
+
+| Action | Example | Does |
+| :-- | :-- | :-- |
+| `create_note` | "Remind me to call mom on Sunday" | Saves the note text without the command phrase; enriched like any note. |
+| `ask_notes` | "What did Sarah say last week?" | Answers like `/query/text`, with dates and category the model resolved from the request as filters. |
+| `list_action_items` | "What do I have to do?" | Open action items from the newest 200 notes that have any, optionally by date and category. |
+| `complete_action_item` | "I fixed the login bug" | Marks the best-matching open item done; if several match about equally, asks which. |
+| `reply` | "What's the weather?" | Answers directly and changes nothing: greetings, requests it cannot do, unclear requests. |
+
+The response has the `utterance` (the transcript for voice), the `action`, a `reply`
+to say back, and, depending on the action, the created or updated `note`, the cited
+`sources`, or `action_items`. Every request makes one agent-model call, plus the
+calls of the action (`ask_notes` makes an embedding and a chat call). Fixed replies
+are in English; answers follow the question's language. Days are UTC.
+
+Matching a task is deterministic: word overlap with stems ("fixed" ~ "fix"), or
+character similarity, whichever is higher. Errors are 503 without `OPENAI_API_KEY`,
+502 if the model call fails, and those of `/query/voice` for audio.
+
+`OPENAI_AGENT_MODEL` defaults to `gpt-5.4`. Before switching it, or
+`OPENAI_CHAT_MODEL`, to a cheaper model, run the [evals](evals/README.md), which
+compare models on fixed datasets and recommend the cheapest that does the same job.
+
 Tests never call OpenAI: they use fakes, or run the real clients against a mocked
 OpenAI HTTP API.
 
@@ -162,15 +192,17 @@ apps/api/
 │   ├── audio.py     # audio upload checks and transcription, shared by notes and search
 │   ├── core/        # settings, async database session, logging
 │   ├── notes/       # router, models, schemas, service for note CRUD and upload
-│   ├── ai/          # OpenAI adapters: extraction, embeddings, transcription, answers
-│   └── search/      # router, schemas, service for hybrid retrieval and answers
+│   ├── ai/          # OpenAI adapters: extraction, embeddings, transcription, answers, agent
+│   ├── search/      # router, schemas, service for hybrid retrieval and answers
+│   └── agent/       # router, schemas, service carrying out the agent's chosen action
+├── evals/           # model-quality datasets and the model comparison runner
 ├── migrations/      # Alembic migrations
 └── tests/           # API, service, and PostgreSQL integration tests
 ```
 
 `app/health.py` holds the health routes, and `app/audio.py` turns an uploaded file
 into a transcript or an HTTP error for both audio notes and voice questions. Feature packages may import `ai/` and `core/`;
-`ai/` imports neither `notes/` nor `search/`, so it stays reusable by both. Audio
+`ai/` imports neither `notes/`, `search/`, nor `agent/`, so it stays reusable by all. Audio
 upload belongs in `notes/` (transcribe, then the existing create flow); the
 `/api/v1/query/*` endpoints belong in `search/`.
 
